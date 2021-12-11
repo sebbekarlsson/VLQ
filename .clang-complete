@@ -1,0 +1,5 @@
+-I./include
+-I/usr/local/include
+-I/usr/include
+-I./_deps/b64_static-src/include
+-I./build/_deps/b64_static-src/include
