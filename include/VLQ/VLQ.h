@@ -13,7 +13,7 @@ typedef struct VLQ_LINE_STRUCT {
   uint32_t length;
 } VLQLine;
 
-typedef struct VLQ_DECORE_RESULT_STRUCT {
+typedef struct VLQ_DECODE_RESULT_STRUCT {
   VLQLine **lines;
   uint32_t length;
   uint32_t nr_extra_lines;
