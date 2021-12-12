@@ -61,7 +61,6 @@ void vlq_decode_into(VLQDecodeResult* result, const char *vlq_str) {
 
   uint32_t nr_lines = 0;
   while ((line = strtok_r(tmp, ";", &tmp))) {
-    printf("(%s)\n", line);
     char *seg = 0;
     char *ptr = line;
     char *rest = ptr;
