@@ -45,6 +45,12 @@ void vlq_decode_segment(uint32_t *intlist, uint32_t *len, const char *segment) {
 }
 
 VLQDecodeResult vlq_decode(const char *vlq_str) {
+  VLQDecodeResult result ={};
+  vlq_decode_into(&result, vlq_str);
+  return result;
+}
+
+void vlq_decode_into(VLQDecodeResult* result, const char *vlq_str) {
   VLQLine **lines = 0;
   char *line = 0;
   char *str = strdup(vlq_str);
@@ -87,7 +93,9 @@ VLQDecodeResult vlq_decode(const char *vlq_str) {
 
   free(str);
 
-  return (VLQDecodeResult){lines, nr_lines, nr_extra_lines};
+  result->lines = lines;
+  result->nr_extra_lines =  nr_extra_lines;
+  result->length = nr_lines;
 }
 
 void vlq_decode_result_free(VLQDecodeResult *result) {

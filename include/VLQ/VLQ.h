@@ -20,6 +20,7 @@ typedef struct VLQ_DECODE_RESULT_STRUCT {
 } VLQDecodeResult;
 
 VLQDecodeResult vlq_decode(const char *vlq_str);
+void vlq_decode_into(VLQDecodeResult* result, const char *vlq_str);
 
 void vlq_decode_segment(uint32_t *intlist, uint32_t *len, const char *segment);
 
