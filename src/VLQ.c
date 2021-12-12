@@ -17,69 +17,188 @@ int char_to_int(char c) {
   return 0;
 }
 
+void slice_str(char ***slices, uint32_t *len, const char *str, char delim) {
+  uint32_t length = strlen(str);
+
+  char **l_slices = 0;
+  uint32_t nr_slices = 0;
+
+  char *tmp = strdup("");
+  for (uint32_t i = 0; i < length; i++) {
+    char c = str[i];
+
+    if (c != delim) {
+      tmp = (char *)realloc(tmp, ((tmp ? strlen(tmp) : 2) + 2) * sizeof(char));
+      char buff[2];
+      buff[0] = c;
+      buff[1] = '\0';
+      strcat(tmp, buff);
+    } else {
+      if (!tmp)
+        tmp = strdup("");
+      nr_slices++;
+      l_slices = (char **)realloc(l_slices, (nr_slices + 1) * sizeof(char *));
+      l_slices[nr_slices - 1] = strdup(tmp);
+      free(tmp);
+      tmp = 0;
+    }
+  }
+
+  if (tmp)
+    free(tmp);
+
+  *slices = l_slices;
+  *len = nr_slices;
+}
+
 // long int decode_char(char c) { return ((c & 0x3f) - 1); }
 
-void vlq_decode_segment(uint32_t *intlist, uint32_t *len, const char *segment) {
+/*
+ *
+*     print(vlqval)
+    """Decode Base64 VLQ value"""
+    results = []
+    add = results.append
+    shiftsize, flag, mask = _shiftsize, _flag, _mask
+    shift = value = 0
+    # use byte values and a table to go from base64 characters to integers
+    for v in map(_b64table.__getitem__, vlqval.encode("ascii")):
+        value += (v & mask) << shift
+        if v & flag:
+            shift += shiftsize
+            continue
+        # determine sign and add to results
+        add((value >> 1) * (-1 if value & 1 else 1))
+        shift = value = 0
+
+    print(results)
+    return results
+ */
+
+VALUE_TYPE _shiftsize = 5;
+VALUE_TYPE _flag = 1 << 5;
+VALUE_TYPE _mask = (1 << 5) - 1;
+void vlq_decode_segment(VALUE_TYPE *intlist, uint32_t *len,
+                        const char *segment) {
+
   uint32_t string_length = strlen(segment);
-  uint32_t value = 0;
-  uint32_t shift = 0;
+  int value = 0;
+  int shiftsize = _shiftsize;
+  int flag = _flag;
+  int mask = _mask;
+  int shift = value = 0;
+  uint32_t count = 0;
+
+  for (uint32_t i = 0; i < string_length; i++) {
+    char c = segment[i];
+    int v = char_to_int(c);
+    value += (v & mask) << shift;
+
+    if (v & flag) {
+      shift += shiftsize;
+      continue;
+    }
+
+    count++;
+    int final_value = ((value >> 1) * (value & 1 ? -1 : 1));
+    intlist[count - 1] = final_value;
+    shift = value = 0;
+  }
+
+  *len = count;
+
+  return;
+  /*printf("SEGMENT: %s\n", segment);
+  uint32_t string_length = strlen(segment);
+  VALUE_TYPE value = 0;
+  VALUE_TYPE shift = 0;
+  VALUE_TYPE mask = _mask;
   for (uint32_t i = 0; i < string_length; i++) {
     char c = segment[i];
     int integer = char_to_int(c);
 
     unsigned int has_continuation_bit = integer & 32;
 
-    integer &= 31;
+    //integer &= 31;
 
-    value += integer << shift;
+    value += (integer & mask) << shift;//integer << shift;
 
     if (has_continuation_bit) {
       shift += 5;
     } else {
-      value = value >> 1;
+      value = value >> 1 * (value & 1 ? -1 : 1);
       *len += 1;
       intlist[*len - 1] = value;
+      printf("%d\n", value);
       value = shift = 0;
     }
-  }
+  }*/
 }
 
 VLQDecodeResult vlq_decode(const char *vlq_str) {
-  VLQDecodeResult result ={};
+  VLQDecodeResult result = {};
   vlq_decode_into(&result, vlq_str);
   return result;
 }
 
-void vlq_decode_into(VLQDecodeResult* result, const char *vlq_str) {
+void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
   VLQLine **lines = 0;
   char *line = 0;
   char *str = strdup(vlq_str);
-  char *tmp = str;
   uint32_t nr_extra_lines = 0;
+
   if (str[0] == ';')
     nr_extra_lines += 1;
 
+  VALUE_TYPE sline = 0;
+  VALUE_TYPE spos = 0;
+  VALUE_TYPE scol = 0;
+  // VALUE_TYPE npos;
   uint32_t nr_lines = 0;
-  while ((line = strtok_r(tmp, ";", &tmp))) {
+  int i = 0;
+
+  char **line_slices = 0;
+  uint32_t lines_len = 0;
+  slice_str(&line_slices, &lines_len, vlq_str, ';');
+  char **sliceptr = line_slices;
+
+  while ((line = *sliceptr++)) {
+    i++;
     char *seg = 0;
     char *ptr = line;
     char *rest = ptr;
 
-    VLQSegment **segments = 0;
     VLQLine *l = (VLQLine *)calloc(1, sizeof(VLQLine));
 
+    uint32_t gcol = 0;
     while ((seg = strtok_r(rest, ",", &rest))) {
+      l->length += 1;
+
       VLQSegment *segment = (VLQSegment *)calloc(1, sizeof(VLQSegment));
-      uint32_t i = 0;
-      char k = seg[2];
-      uint32_t seglen = strlen(seg);
-      uint32_t intlist[256];
+      VALUE_TYPE intlist[256];
       uint32_t lenlen = 0;
       vlq_decode_segment(intlist, &lenlen, seg);
-      segment->values = (uint32_t *)calloc(lenlen, sizeof(uint32_t));
-      memcpy(&segment->values[0], &intlist[0], lenlen * sizeof(uint32_t));
+      segment->values = (VALUE_TYPE *)calloc(lenlen, sizeof(VALUE_TYPE));
+      memcpy(&segment->values[0], &intlist[0], lenlen * sizeof(VALUE_TYPE));
       segment->length = lenlen;
-      l->length += 1;
+
+      VALUE_TYPE sd = segment->values[1];
+      VALUE_TYPE sld = segment->values[2];
+      VALUE_TYPE scd = segment->values[3];
+      // VALUE_TYPE namedelta = segment->values[4];
+      gcol += segment->values[1];
+
+      spos = spos + sd; // source pos
+      sline = sline + sld;
+      scol = scol + scd;
+
+      segment->original_line = sline;
+      segment->original_column = scol;
+      segment->original_source = spos;
+      segment->original_file = segment->original_source;
+      segment->generated_line = nr_lines;
+      segment->generated_column = gcol;
+
       l->segments =
           (VLQSegment **)realloc(l->segments, l->length * sizeof(VLQSegment *));
       l->segments[l->length - 1] = segment;
@@ -90,10 +209,19 @@ void vlq_decode_into(VLQDecodeResult* result, const char *vlq_str) {
     lines[nr_lines - 1] = l;
   }
 
+  for (uint32_t i = 0; i < lines_len; i++) {
+    char *v = line_slices[i];
+    if (v) {
+      free(v);
+    }
+  }
+
+  free(line_slices);
+
   free(str);
 
   result->lines = lines;
-  result->nr_extra_lines =  nr_extra_lines;
+  result->nr_extra_lines = nr_extra_lines;
   result->length = nr_lines;
 }
 
