@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
 
 const char *TABLE =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -28,18 +29,21 @@ void slice_str(char ***slices, uint32_t *len, const char *str, char delim) {
     char c = str[i];
 
     if (c != delim) {
-      tmp = (char *)realloc(tmp, ((tmp ? strlen(tmp) : 2) + 2) * sizeof(char));
+      uint32_t tmp_len = tmp ? strlen(tmp) : 0;
+      tmp = (char *)realloc(tmp, ((tmp_len ? tmp_len : 2) + 2) * sizeof(char));
+      memset(&tmp[tmp_len], '\0', 2);
       char buff[2];
       buff[0] = c;
       buff[1] = '\0';
       strcat(tmp, buff);
     } else {
-      if (!tmp)
-        tmp = strdup("");
       nr_slices++;
       l_slices = (char **)realloc(l_slices, (nr_slices + 1) * sizeof(char *));
-      l_slices[nr_slices - 1] = strdup(tmp);
-      free(tmp);
+      l_slices[MAX(0, nr_slices - 1)] = strdup(tmp ? tmp : "");
+
+      if (tmp) {
+        free(tmp);
+      }
       tmp = 0;
     }
   }
@@ -162,8 +166,17 @@ void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
   slice_str(&line_slices, &lines_len, vlq_str, ';');
   char **sliceptr = line_slices;
 
+  if (!sliceptr) {
+    fprintf(stderr, "VLQ: sliceptr is NULL.\n");
+    return;
+  }
+
   while ((line = *sliceptr++)) {
     i++;
+    if (!line) {
+      fprintf(stderr, "VLQ: line is NULL.\n");
+      continue;
+    };
     char *seg = 0;
     char *ptr = line;
     char *rest = ptr;
@@ -174,11 +187,29 @@ void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
     while ((seg = strtok_r(rest, ",", &rest))) {
       l->length += 1;
 
+      if (!seg) {
+        fprintf(stderr, "VLQ: seg is NULL.\n");
+        continue;
+      }
+
       VLQSegment *segment = (VLQSegment *)calloc(1, sizeof(VLQSegment));
+      if (!segment) {
+        fprintf(stderr, "VLQ: failed to allocate segment.\n");
+        continue;
+      }
       VALUE_TYPE intlist[256];
       uint32_t lenlen = 0;
       vlq_decode_segment(intlist, &lenlen, seg);
+
+      if (!lenlen) {
+        fprintf(stderr, "VLQ: lenlen is 0.\n");
+        continue;
+      }
+
       segment->values = (VALUE_TYPE *)calloc(lenlen, sizeof(VALUE_TYPE));
+      if (!segment->values) {
+        fprintf(stderr, "VLQ: failed to allocate segment->values.\n");
+      }
       memcpy(&segment->values[0], &intlist[0], lenlen * sizeof(VALUE_TYPE));
       segment->length = lenlen;
 
@@ -200,13 +231,20 @@ void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
       segment->generated_column = gcol;
 
       l->segments =
-          (VLQSegment **)realloc(l->segments, l->length * sizeof(VLQSegment *));
-      l->segments[l->length - 1] = segment;
+        (VLQSegment **)realloc(l->segments, l->length * sizeof(VLQSegment *));
+
+      if (!l->segments) {
+        fprintf(stderr, "VLQ: Failed to reallocate l->segments.\n");
+      }
+      l->segments[MAX(0, l->length - 1)] = segment;
     }
 
     nr_lines += 1;
     lines = (VLQLine **)realloc(lines, nr_lines * sizeof(VLQLine *));
-    lines[nr_lines - 1] = l;
+    if (!lines) {
+        fprintf(stderr, "VLQ: Failed to reallocate lines.\n");
+      }
+    lines[MAX(0, nr_lines - 1)] = l;
   }
 
   for (uint32_t i = 0; i < lines_len; i++) {
@@ -216,9 +254,13 @@ void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
     }
   }
 
-  free(line_slices);
+  if (line_slices) {
+    free(line_slices);
+  }
 
-  free(str);
+  if (str) {
+    free(str);
+  }
 
   result->lines = lines;
   result->nr_extra_lines = nr_extra_lines;
@@ -226,7 +268,10 @@ void vlq_decode_into(VLQDecodeResult *result, const char *vlq_str) {
 }
 
 void vlq_decode_result_free(VLQDecodeResult *result) {
+  if (!result) return;
   for (uint32_t i = 0; i < result->length; i++) {
+    if (!result->lines[i]) continue;
+
     vlq_line_free(result->lines[i]);
   }
 
@@ -236,17 +281,26 @@ void vlq_decode_result_free(VLQDecodeResult *result) {
 }
 
 void vlq_line_free(VLQLine *line) {
+  if (!line) return;
   for (uint32_t i = 0; i < line->length; i++) {
+    if (!line->segments[i]) continue;
+
     vlq_segment_free(line->segments[i]);
   }
 
-  free(line->segments);
+  if (line->segments) {
+    free(line->segments);
+  }
   line->segments = 0;
   line->length = 0;
   free(line);
 }
 
 void vlq_segment_free(VLQSegment *segment) {
-  free(segment->values);
+  if (!segment) return;
+
+  if (segment->values) {
+    free(segment->values);
+  }
   free(segment);
 }
